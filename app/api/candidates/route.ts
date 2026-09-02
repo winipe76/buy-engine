@@ -14,7 +14,6 @@ function canManage(request: Request) {
 
 export async function GET(request: Request) {
   if (!runtime.DB) return json({ status: "database_unavailable", candidates: [] }, 503);
-  if (!canManage(request)) return json({ status: "unauthorized", candidates: [], error: "Sign in is required" }, 401);
   const filter = new URL(request.url).searchParams.get("status") ?? "active";
   if (!['active', 'inactive', 'all'].includes(filter)) return json({ status: "invalid_request", error: "status must be active, inactive, or all" }, 400);
   const where = filter === "all" ? "" : `WHERE active=${filter === "active" ? 1 : 0}`;
