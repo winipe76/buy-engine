@@ -1,10 +1,12 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { authorizedByPassword } from "../lib/access-password";
 
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  BUY_ENGINE_ACCESS_PASSWORD?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -28,6 +30,17 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+
+    if (!local && !env.BUY_ENGINE_ACCESS_PASSWORD) {
+      return new Response("Buy Engine access password is not configured.", { status: 503 });
+    }
+    if (!local && !authorizedByPassword(request, env.BUY_ENGINE_ACCESS_PASSWORD!)) {
+      return new Response("Authentication required.", {
+        status: 401,
+        headers: { "WWW-Authenticate": 'Basic realm="Buy Engine", charset="UTF-8"', "Cache-Control": "no-store" },
+      });
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
