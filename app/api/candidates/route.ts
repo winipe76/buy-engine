@@ -7,11 +7,6 @@ type RuntimeEnv = { DB?: D1Database };
 const runtime = env as unknown as RuntimeEnv;
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 
-function canManage(request: Request) {
-  const url = new URL(request.url);
-  return url.hostname === "localhost" || url.hostname === "127.0.0.1" || Boolean(request.headers.get("oai-authenticated-user-id"));
-}
-
 export async function GET(request: Request) {
   if (!runtime.DB) return json({ status: "database_unavailable", candidates: [] }, 503);
   const filter = new URL(request.url).searchParams.get("status") ?? "active";
@@ -29,7 +24,6 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   if (!runtime.DB) return json({ status: "database_unavailable" }, 503);
-  if (!canManage(request)) return json({ status: "unauthorized", error: "Sign in is required" }, 401);
   try {
     const body = await request.json() as Record<string, unknown>;
     const ticker = normalizeTicker(body.ticker);
