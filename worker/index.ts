@@ -37,6 +37,7 @@ const worker = {
     if (!local && !env.BUY_ENGINE_ACCESS_PASSWORD) {
       return new Response("Buy Engine access password is not configured.", { status: 503 });
     }
+    if (url.pathname === "/api/candidates/sync") return handler.fetch(request, env, ctx);
     if (!local && url.pathname === "/access" && request.method === "POST") {
       const form = await request.formData();
       if (form.get("password") !== env.BUY_ENGINE_ACCESS_PASSWORD) return loginPage(true);
