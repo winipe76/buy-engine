@@ -8,9 +8,6 @@ const runtime = env as unknown as RuntimeEnv;
 
 export async function POST(request: Request) {
   if (!runtime.DB) return Response.json({ status: "database_unavailable" }, { status: 503 });
-  if (!request.headers.get("oai-authenticated-user-id") && !["localhost", "127.0.0.1"].includes(new URL(request.url).hostname)) {
-    return Response.json({ status: "unauthorized", error: "Sign in is required" }, { status: 401 });
-  }
   if (!runtime.FMP_API_KEY) return Response.json({ status: "integration_not_configured", error: "FMP API key is not configured" }, { status: 503 });
   try {
     const body = await request.json() as Record<string, unknown>;
