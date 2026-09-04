@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const where = filter === "all" ? "" : `WHERE active=${filter === "active" ? 1 : 0}`;
   const result = await runtime.DB.prepare(`SELECT c.*,
     a.analyzed_at,a.price_as_of,a.price,a.value_score,a.overheat_score,a.delta_overheat,a.dca_multiplier,a.action,
-    a.value_state,a.overheat_state,a.value_metrics_json,a.overheat_metrics_json,a.data_quality_json
+    a.value_state,a.overheat_state,a.value_metrics_json,a.overheat_metrics_json,a.data_quality_json,a.source_version
     FROM buy_candidates c
     LEFT JOIN buy_analysis_snapshots a ON a.id=(SELECT latest.id FROM buy_analysis_snapshots latest WHERE latest.ticker=c.ticker ORDER BY latest.analyzed_at DESC LIMIT 1)
     ${where ? where.replace("active", "c.active") : ""}

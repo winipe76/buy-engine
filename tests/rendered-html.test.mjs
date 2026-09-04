@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render() {
@@ -28,8 +29,16 @@ test("shows Fundamental Trend adjustment and keeps candidate selection user-cont
   const response = await render();
   const html = await response.text();
   assert.match(html, /Fundamental Trend로 DCA 보정/);
+  assert.doesNotMatch(html, /as of 2026\.08\.11/);
   assert.match(html, /Deactivate는 이력을 삭제하지 않습니다/);
   assert.doesNotMatch(html, /PASS만|Gate 확인 후 추가/);
+});
+
+test("shows the audit trail for a selected candidate without a hardcoded date", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /AUDIT TRAIL/);
+  assert.match(source, /계산 근거와 기준일/);
+  assert.doesNotMatch(source, /as of 2026\.08\.11/);
 });
 
 test("preserves the no-sell safety boundary", async () => {

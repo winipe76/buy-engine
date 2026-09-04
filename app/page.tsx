@@ -31,6 +31,17 @@ type Company = {
   overheatState: string;
   valueMetrics: ComponentMetric[];
   overheatMetrics: ComponentMetric[];
+  analyzedAt?: string | null;
+  priceAsOf?: string | null;
+  marketCapAsOf?: string | null;
+  financialAsOf?: string | null;
+  dataQualityStatus?: string | null;
+  dataQualityWarnings?: string[];
+  sourceVersion?: string | null;
+  baseMultiplier?: number | null;
+  fundamentalTrendState?: string | null;
+  fundamentalTrendAdjustment?: number | null;
+  fundamentalTrendReason?: string | null;
 };
 
 const companies: Company[] = [
@@ -162,6 +173,7 @@ type CandidateApiRecord = {
   overheat_score: number | null; delta_overheat: number | null; dca_multiplier: number | null; action: Action | null;
   value_state: string | null; overheat_state: string | null; value_metrics_json: string | null;
   overheat_metrics_json: string | null; data_quality_json: string | null;
+  source_version: string | null;
 };
 
 const stageLabels: Record<FundamentalStage | "unavailable", string> = {
@@ -247,6 +259,8 @@ function analyzedCompany(candidate: CandidateApiRecord, reference: Pick<Company,
   if (!candidate.analyzed_at || candidate.price === null || candidate.overheat_score === null) return null;
   const value = parsedMetrics(candidate.value_metrics_json);
   const overheat = parsedMetrics(candidate.overheat_metrics_json);
+  const quality = parsedMetrics(candidate.data_quality_json);
+  const trend = quality.fundamental_trend && typeof quality.fundamental_trend === "object" ? quality.fundamental_trend as Record<string, unknown> : {};
   const forwardPe = metricNumber(value, "forward_pe"), peg = metricNumber(value, "peg"), evSalesGrowth = metricNumber(value, "ev_sales_growth"), fcfYield = metricNumber(value, "fcf_yield");
   const price = candidate.price;
   const ma20 = metricNumber(overheat, "ma20"), ma50 = metricNumber(overheat, "ma50"), ma200 = metricNumber(overheat, "ma200");
@@ -264,6 +278,15 @@ function analyzedCompany(candidate: CandidateApiRecord, reference: Pick<Company,
     summary: `FMP 기준 ${candidate.price_as_of ?? "최신"} 데이터로 계산했습니다. Value ${candidate.value_score?.toFixed(1) ?? "산출 불가"}, Overheat ${candidate.overheat_score.toFixed(1)}, DCA ${formatMultiplier(candidate.dca_multiplier)}입니다.`,
     valueState: candidate.value_state ?? "INSUFFICIENT DATA",
     overheatState: `${candidate.overheat_state ?? "PENDING"} · ${delta > 0 ? "HEATING" : delta < 0 ? "COOLING" : "STABLE"}`,
+    analyzedAt: candidate.analyzed_at, priceAsOf: candidate.price_as_of,
+    marketCapAsOf: typeof quality.market_cap_as_of === "string" ? quality.market_cap_as_of : null,
+    financialAsOf: typeof quality.financial_as_of === "string" ? quality.financial_as_of : null,
+    dataQualityStatus: typeof quality.status === "string" ? quality.status : null,
+    dataQualityWarnings: Array.isArray(quality.warnings) ? quality.warnings.filter((warning): warning is string => typeof warning === "string") : [],
+    sourceVersion: candidate.source_version, baseMultiplier: metricNumber(quality, "base_dca_multiplier"),
+    fundamentalTrendState: typeof trend.state === "string" ? trend.state : null,
+    fundamentalTrendAdjustment: metricNumber(trend, "adjustment"),
+    fundamentalTrendReason: typeof trend.reason === "string" ? trend.reason : null,
     valueMetrics: [
       { label: "FCF Yield", value: fcfYield === null ? "산출 불가" : `${(fcfYield * 100).toFixed(2)}%`, note: "TTM FCF / 현재 시가총액", tone: fcfYield !== null && fcfYield >= .03 ? "positive" : "neutral" },
       { label: "Forward P/E", value: forwardPe === null ? "산출 불가" : `${forwardPe.toFixed(1)}배`, note: "FY1 EPS 컨센서스", tone: forwardPe !== null && forwardPe <= 30 ? "positive" : "caution" },
@@ -322,6 +345,8 @@ export default function Home() {
   }, [filter, sortKey, direction, resolvedCompanies]);
 
   const selected = resolvedCompanies.find((company) => company.symbol === selectedSymbol) ?? resolvedCompanies[0] ?? null;
+  const latestPriceAsOf = resolvedCompanies.map((company) => company.priceAsOf).filter((date): date is string => Boolean(date)).sort().at(-1);
+  const overallQuality = resolvedCompanies.some((company) => company.dataQualityStatus === "WARNING") ? "WARNING" : resolvedCompanies.length ? "PASS" : "CHECK";
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setDirection((current) => current === "asc" ? "desc" : "asc");
@@ -343,7 +368,7 @@ export default function Home() {
     <main>
       <header className="site-header">
         <div className="brand"><div className="brand-mark">B</div><div><strong>BUY ENGINE</strong><span>지금 사도 되는가 · 얼마나 살 것인가</span></div></div>
-        <div className="status-cluster"><span className="live-dot" /><div><strong>DATA QUALITY PASS</strong><span>2026.08.11 · FMP Starter</span></div></div>
+        <div className="status-cluster"><span className="live-dot" /><div><strong>DATA QUALITY {overallQuality}</strong><span>{latestPriceAsOf ?? "데이터 로딩 중"} · FMP</span></div></div>
       </header>
 
       <section className="hero compact-hero">
@@ -399,7 +424,7 @@ export default function Home() {
 
       {selected && <article className="detail-card" aria-live="polite">
         <div className="detail-header">
-          <div className="identity"><div className={`ticker ticker-${selected.symbol.toLowerCase()}`}>{selected.symbol[0]}</div><div><div className="symbol-line"><h2>{selected.symbol}</h2><span>{selected.name}</span></div><p className="price">{formatPrice(selected.price)} · as of 2026.08.11</p></div></div>
+          <div className="identity"><div className={`ticker ticker-${selected.symbol.toLowerCase()}`}>{selected.symbol[0]}</div><div><div className="symbol-line"><h2>{selected.symbol}</h2><span>{selected.name}</span></div><p className="price">{formatPrice(selected.price)} · as of {selected.priceAsOf ?? "—"}</p></div></div>
           <div className={`gate-block stage-block-${selected.fundamentalStage}`}><span>FUNDAMENTAL STAGE</span><strong>{stageLabels[selected.fundamentalStage]}</strong><small>Score {selected.fundamentalScore?.toFixed(1) ?? "—"} · Trend adjustment</small></div>
           <div className={`decision-block tone-${selected.actionTone}`}><span>ACTION</span><strong>{selected.action}</strong><small>DCA {formatMultiplier(selected.multiplier)}</small></div>
         </div>
@@ -413,6 +438,19 @@ export default function Home() {
         </div>
 
         <p className="decision-summary">{selected.summary}</p>
+
+        <section className="audit-card" aria-labelledby="audit-title">
+          <div className="audit-title"><div><span>AUDIT TRAIL</span><h3 id="audit-title">계산 근거와 기준일</h3></div><strong className={`quality-${selected.dataQualityStatus?.toLowerCase() ?? "check"}`}>{selected.dataQualityStatus ?? "CHECK"}</strong></div>
+          <div className="audit-grid">
+            <div><span>주가 기준일</span><strong>{selected.priceAsOf ?? "—"}</strong></div>
+            <div><span>계산 시각</span><strong>{selected.analyzedAt ? new Date(selected.analyzedAt).toLocaleString("ko-KR") : "—"}</strong></div>
+            <div><span>시가총액 기준일</span><strong>{selected.marketCapAsOf ?? "—"}</strong></div>
+            <div><span>재무 기준일</span><strong>{selected.financialAsOf ?? "—"}</strong></div>
+            <div><span>계산 버전</span><strong>{selected.sourceVersion ?? "—"}</strong></div>
+          </div>
+          <div className="audit-decision"><strong>기본 DCA {formatMultiplier(selected.baseMultiplier ?? null)} + Fundamental {selected.fundamentalTrendAdjustment === null || selected.fundamentalTrendAdjustment === undefined ? "—" : `${selected.fundamentalTrendAdjustment >= 0 ? "+" : ""}${selected.fundamentalTrendAdjustment.toFixed(1)}×`} = 최종 {formatMultiplier(selected.multiplier)}</strong><span>{selected.fundamentalTrendState ? `${selected.fundamentalTrendState} · ${selected.fundamentalTrendReason}` : "v1.4 보정 근거는 다음 지표 업데이트 후 기록됩니다."}</span></div>
+          {Boolean(selected.dataQualityWarnings?.length) && <ul className="audit-warnings">{selected.dataQualityWarnings!.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
+        </section>
 
         <div className="analysis-grid">
           <MetricPanel title="Value" subtitle={selected.valueState} metrics={selected.valueMetrics} score={selected.value} tone={selected.value >= 60 ? "positive" : selected.value < 20 ? "negative" : "neutral"} />
