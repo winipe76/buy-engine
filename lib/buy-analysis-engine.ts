@@ -15,8 +15,17 @@ export type ValueMetrics = {
   available_components: number; total_components: number; coverage_ratio: number; sufficient_data: boolean;
 };
 
+export type FundamentalTrendState = "IMPROVING" | "STABLE" | "SLOWING" | "DETERIORATING";
+
+export type FundamentalTrend = {
+  state: FundamentalTrendState;
+  adjustment: -1 | -0.5 | 0 | 0.5;
+  reason: string;
+};
+
 export type DcaDecision = {
-  fundamental_context: "REFERENCE_ONLY"; value_state: string | null; overheat_state: string;
+  fundamental_context: "TREND_ADJUSTMENT"; value_state: string | null; overheat_state: string;
+  base_multiplier: number | null; fundamental_trend: FundamentalTrend;
   multiplier: number | null; action: "BUY" | "PAUSE" | "REVIEW"; reason: string;
 };
 
@@ -25,6 +34,47 @@ const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0)
 const movingAverage = (values: number[], window: number) => values.length >= window ? mean(values.slice(-window)) : null;
 const periodReturn = (values: number[], sessions: number) => values.length > sessions && values.at(-sessions - 1) !== 0
   ? values.at(-1)! / values.at(-sessions - 1)! - 1 : null;
+
+function normalizeTrendText(value: unknown) {
+  return typeof value === "string" ? value.trim().toLowerCase().replace(/[\s_-]+/g, " ") : "";
+}
+
+export function deriveFundamentalTrend(input: {
+  stage?: string | null;
+  currentScore?: number | null;
+  previousScore?: number | null;
+  metrics?: Record<string, unknown> | null;
+}): FundamentalTrend {
+  const metrics = input.metrics ?? {};
+  const explicitKeys = ["fundamental_trend", "guidance_trend", "guidance_revision", "growth_trend", "outlook_trend"];
+  const explicit = explicitKeys.map((key) => normalizeTrendText(metrics[key])).find(Boolean) ?? "";
+
+  if (/deteriorat|material decline|sharp decline|급격|악화/.test(explicit)) {
+    return { state: "DETERIORATING", adjustment: -1, reason: `Explicit fundamental/guidance trend: ${explicit}` };
+  }
+  if (/down|lower|cut|slow|deceler|하향|둔화/.test(explicit)) {
+    return { state: "SLOWING", adjustment: -0.5, reason: `Explicit fundamental/guidance trend: ${explicit}` };
+  }
+  if (/up|raise|improv|acceler|상향|개선/.test(explicit)) {
+    return { state: "IMPROVING", adjustment: 0.5, reason: `Explicit fundamental/guidance trend: ${explicit}` };
+  }
+
+  if (input.currentScore !== null && input.currentScore !== undefined && input.previousScore !== null && input.previousScore !== undefined) {
+    const scoreDelta = input.currentScore - input.previousScore;
+    if (scoreDelta <= -10) return { state: "DETERIORATING", adjustment: -1, reason: `Fundamental score fell ${Math.abs(scoreDelta).toFixed(1)} points` };
+    if (scoreDelta <= -3) return { state: "SLOWING", adjustment: -0.5, reason: `Fundamental score fell ${Math.abs(scoreDelta).toFixed(1)} points` };
+    if (scoreDelta >= 5) return { state: "IMPROVING", adjustment: 0.5, reason: `Fundamental score rose ${scoreDelta.toFixed(1)} points` };
+  }
+
+  if (input.stage === "caution" || input.stage === "excluded") {
+    return { state: "DETERIORATING", adjustment: -1, reason: `Fundamental stage is ${input.stage}` };
+  }
+  if (input.stage === "watch") {
+    return { state: "SLOWING", adjustment: -0.5, reason: "Fundamental stage is watch" };
+  }
+
+  return { state: "STABLE", adjustment: 0, reason: "No confirmed guidance/fundamental deterioration signal" };
+}
 
 export function calculateRsi(values: number[], window = 14) {
   if (values.length <= window) return null;
@@ -97,10 +147,10 @@ export function calculateValue(input: {
   };
 }
 
-export function decideDca(valueScore: number | null, overheatScore: number): DcaDecision {
+export function decideDca(valueScore: number | null, overheatScore: number, fundamentalTrend: FundamentalTrend = { state: "STABLE", adjustment: 0, reason: "No fundamental trend input" }): DcaDecision {
   const overheatState = overheatScore < 25 ? "LOW" : overheatScore < 50 ? "NORMAL" : overheatScore < 75 ? "HIGH" : "EXTREME";
   const valueState = valueScore === null ? null : valueScore >= 80 ? "VERY_UNDERVALUED" : valueScore >= 60 ? "UNDERVALUED" : valueScore >= 40 ? "FAIR" : valueScore >= 20 ? "OVERVALUED" : "EXTREME_OVERVALUED";
-  if (!valueState) return { fundamental_context: "REFERENCE_ONLY", value_state: null, overheat_state: overheatState, multiplier: null, action: "REVIEW", reason: "Value data coverage is insufficient" };
+  if (!valueState) return { fundamental_context: "TREND_ADJUSTMENT", value_state: null, overheat_state: overheatState, base_multiplier: null, fundamental_trend: fundamentalTrend, multiplier: null, action: "REVIEW", reason: "Value data coverage is insufficient" };
   const matrix: Record<string, Record<string, number>> = {
     VERY_UNDERVALUED: { LOW: 1.5, NORMAL: 1.5, HIGH: 1, EXTREME: 0.5 },
     UNDERVALUED: { LOW: 1.5, NORMAL: 1, HIGH: 0.5, EXTREME: 0 },
@@ -108,12 +158,17 @@ export function decideDca(valueScore: number | null, overheatScore: number): Dca
     OVERVALUED: { LOW: 0.5, NORMAL: 0.5, HIGH: 0, EXTREME: 0 },
     EXTREME_OVERVALUED: { LOW: 0, NORMAL: 0, HIGH: 0, EXTREME: 0 },
   };
-  const multiplier = matrix[valueState][overheatState];
-  return { fundamental_context: "REFERENCE_ONLY", value_state: valueState, overheat_state: overheatState, multiplier, action: multiplier === 0 ? "PAUSE" : "BUY", reason: `${valueState} value, ${overheatState} overheat; Fundamental is reference only` };
+  const baseMultiplier = matrix[valueState][overheatState];
+  const multiplier = clamp(baseMultiplier + fundamentalTrend.adjustment, 0, 1.5);
+  return {
+    fundamental_context: "TREND_ADJUSTMENT", value_state: valueState, overheat_state: overheatState,
+    base_multiplier: baseMultiplier, fundamental_trend: fundamentalTrend, multiplier,
+    action: multiplier === 0 ? "PAUSE" : "BUY",
+    reason: `${valueState} value, ${overheatState} overheat; Fundamental trend ${fundamentalTrend.state} (${fundamentalTrend.adjustment >= 0 ? "+" : ""}${fundamentalTrend.adjustment.toFixed(1)}x)`,
+  };
 }
 
 export function numeric(row: NumericRow, ...keys: string[]) {
   for (const key of keys) if (typeof row[key] === "number" && Number.isFinite(row[key])) return row[key] as number;
   return null;
 }
-

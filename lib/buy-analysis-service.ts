@@ -1,8 +1,8 @@
-import { calculateOverheat, calculateValue, decideDca, numeric, type NumericRow } from "@/lib/buy-analysis-engine";
+import { calculateOverheat, calculateValue, decideDca, deriveFundamentalTrend, numeric, type NumericRow } from "@/lib/buy-analysis-engine";
 import { completedUsDailyRows, isCompletedPriceCacheSafe } from "@/lib/completed-prices";
 
 const FMP_BASE_URL = "https://financialmodelingprep.com/stable";
-const SOURCE_VERSION = "buy-engine-v1.3-confirmed-close-ma-extension";
+const SOURCE_VERSION = "buy-engine-v1.4-fundamental-trend";
 const BENCHMARK_CACHE_MS = 12 * 60 * 60 * 1000;
 
 type AnalysisRuntime = { DB: D1Database; FMP_API_KEY: string };
@@ -83,7 +83,10 @@ async function benchmarkPrices(runtime: AnalysisRuntime, start: string) {
 
 export async function refreshCandidateAnalysis(runtime: AnalysisRuntime, ticker: string) {
   const symbol = ticker.trim().toUpperCase();
-  const candidate = await runtime.DB.prepare("SELECT ticker FROM buy_candidates WHERE ticker=? AND active=1").bind(symbol).first();
+  const candidate = await runtime.DB.prepare(`SELECT ticker,fundamental_stage,fundamental_score,fundamental_metrics_json
+    FROM buy_candidates WHERE ticker=? AND active=1`).bind(symbol).first<{
+      ticker: string; fundamental_stage: string; fundamental_score: number | null; fundamental_metrics_json: string;
+    }>();
   if (!candidate) throw new Error(`${symbol}: active candidate was not found`);
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
@@ -119,8 +122,20 @@ export async function refreshCandidateAnalysis(runtime: AnalysisRuntime, ticker:
   const revenueGrowth = nextRevenue && forwardRevenue ? nextRevenue / forwardRevenue - 1 : null;
   const epsGrowth = nextEps && forwardEps && forwardEps > 0 ? nextEps / forwardEps - 1 : null;
   const value = calculateValue({ price: overheat.price, marketCap, enterpriseValue, ttmFcf: ttmSum(cashflow, "freeCashFlow") ?? 0, forwardRevenue, forwardEps, revenueGrowth, epsGrowth });
-  const decision = decideDca(value.score, overheat.score);
-  const quality = auditInputs(symbol, priceAsOf, stockSeries.dates.length, aligned.dates.length, marketCapRow, income, cashflow, balance);
+
+  const previousFundamental = await runtime.DB.prepare(`SELECT fundamental_score FROM fundamental_reference_snapshots
+    WHERE ticker=? AND fundamental_score IS NOT NULL ORDER BY received_at DESC LIMIT 1 OFFSET 1`).bind(symbol).first<{ fundamental_score: number }>();
+  let fundamentalMetrics: Record<string, unknown> = {};
+  try { fundamentalMetrics = JSON.parse(candidate.fundamental_metrics_json) as Record<string, unknown>; } catch { fundamentalMetrics = {}; }
+  const fundamentalTrend = deriveFundamentalTrend({
+    stage: candidate.fundamental_stage,
+    currentScore: candidate.fundamental_score,
+    previousScore: previousFundamental?.fundamental_score ?? null,
+    metrics: fundamentalMetrics,
+  });
+  const decision = decideDca(value.score, overheat.score, fundamentalTrend);
+  const baseQuality = auditInputs(symbol, priceAsOf, stockSeries.dates.length, aligned.dates.length, marketCapRow, income, cashflow, balance);
+  const quality = { ...baseQuality, fundamental_trend: fundamentalTrend, base_dca_multiplier: decision.base_multiplier };
   const previous = await runtime.DB.prepare("SELECT overheat_score FROM buy_analysis_snapshots WHERE ticker=? ORDER BY analyzed_at DESC LIMIT 1").bind(symbol).first<{ overheat_score: number }>();
   const deltaOverheat = previous ? overheat.score - previous.overheat_score : 0;
   const rawDatasets: Array<[string, string, NumericRow[]]> = [
@@ -135,6 +150,11 @@ export async function refreshCandidateAnalysis(runtime: AnalysisRuntime, ticker:
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(symbol, now, priceAsOf, overheat.price, value.score, overheat.score, deltaOverheat,
       decision.multiplier, decision.action, decision.value_state, decision.overheat_state, JSON.stringify(value), JSON.stringify(overheat), JSON.stringify(quality), SOURCE_VERSION),
   ]);
-  return { ticker: symbol, analyzed_at: now, price_as_of: priceAsOf, price: overheat.price, value_score: value.score, overheat_score: overheat.score, delta_overheat: deltaOverheat, dca_multiplier: decision.multiplier, action: decision.action, value_state: decision.value_state, overheat_state: decision.overheat_state, value_metrics: value, overheat_metrics: overheat, data_quality: quality };
+  return {
+    ticker: symbol, analyzed_at: now, price_as_of: priceAsOf, price: overheat.price, value_score: value.score,
+    overheat_score: overheat.score, delta_overheat: deltaOverheat, base_dca_multiplier: decision.base_multiplier,
+    fundamental_trend: fundamentalTrend, dca_multiplier: decision.multiplier, action: decision.action,
+    value_state: decision.value_state, overheat_state: decision.overheat_state, value_metrics: value,
+    overheat_metrics: overheat, data_quality: quality,
+  };
 }
-
