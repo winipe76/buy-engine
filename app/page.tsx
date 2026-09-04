@@ -77,7 +77,7 @@ const companies: Company[] = [
     multiplier: 0,
     action: "PAUSE",
     actionTone: "caution",
-    summary: "Value 부담과 극단적 Overheat가 겹쳐 신규 매수를 중단합니다. Fundamental 분류는 참고 정보이며 이 결정을 차단하거나 변경하지 않습니다.",
+    summary: "Value 부담과 극단적 Overheat가 겹쳐 신규 매수를 중단합니다. Fundamental Trend 보정 후에도 DCA는 0×입니다.",
     valueState: "EXTREME OVERVALUED",
     overheatState: "EXTREME · COOLING",
     valueMetrics: [
@@ -348,7 +348,7 @@ export default function Home() {
 
       <section className="hero compact-hero">
         <div><p className="eyebrow">PORTFOLIO BUY OVERVIEW</p><h1>매수 판단을<br /><em>한눈에.</em></h1></div>
-        <div className="role-note"><span>ROLE</span><strong>Fundamental은 Reference로만 사용</strong><p>5단계 분류와 Score는 참고 정보입니다. 매수 강도는 Value + Overheat로만 결정합니다.</p></div>
+        <div className="role-note"><span>ROLE</span><strong>Fundamental Trend로 DCA 보정</strong><p>Value + Overheat 기본 DCA에 성장과 가이던스 추세를 ±0.5~1.0× 반영합니다.</p></div>
       </section>
 
       <section className="overview-card" aria-labelledby="overview-title">
@@ -400,7 +400,7 @@ export default function Home() {
       {selected && <article className="detail-card" aria-live="polite">
         <div className="detail-header">
           <div className="identity"><div className={`ticker ticker-${selected.symbol.toLowerCase()}`}>{selected.symbol[0]}</div><div><div className="symbol-line"><h2>{selected.symbol}</h2><span>{selected.name}</span></div><p className="price">{formatPrice(selected.price)} · as of 2026.08.11</p></div></div>
-          <div className={`gate-block stage-block-${selected.fundamentalStage}`}><span>FUNDAMENTAL STAGE</span><strong>{stageLabels[selected.fundamentalStage]}</strong><small>Score {selected.fundamentalScore?.toFixed(1) ?? "—"} · Reference only</small></div>
+          <div className={`gate-block stage-block-${selected.fundamentalStage}`}><span>FUNDAMENTAL STAGE</span><strong>{stageLabels[selected.fundamentalStage]}</strong><small>Score {selected.fundamentalScore?.toFixed(1) ?? "—"} · Trend adjustment</small></div>
           <div className={`decision-block tone-${selected.actionTone}`}><span>ACTION</span><strong>{selected.action}</strong><small>DCA {formatMultiplier(selected.multiplier)}</small></div>
         </div>
 
@@ -420,7 +420,7 @@ export default function Home() {
         </div>
       </article>}
 
-      <section className="method-note"><div className="method-index">01</div><div><h3>Fundamental과 Buy Engine은 독립적으로 관리됩니다.</h3><p>Fundamental Flow는 사용자가 선택한 회사의 최신 분류·Score·지표 Snapshot만 전달합니다. Buy Engine은 Value + Overheat로 DCA를 결정합니다.</p></div><div className="legend"><span><i className="legend-dot green" />BUY</span><span><i className="legend-dot amber" />PAUSE</span><span><i className="legend-dot red" />과열·부담</span></div></section>
+      <section className="method-note"><div className="method-index">01</div><div><h3>Fundamental Trend는 DCA를 한 단계 보정합니다.</h3><p>Value + Overheat 기본 DCA에 성장 둔화·가이던스 하향은 감산하고, 개선 추세는 가산합니다. 최종 범위는 0~1.5×입니다.</p></div><div className="legend"><span><i className="legend-dot green" />BUY</span><span><i className="legend-dot amber" />PAUSE</span><span><i className="legend-dot red" />과열·부담</span></div></section>
       <footer><span>0×는 매도가 아닌 신규 매수 중단(PAUSE)입니다.</span><span>SELL 기능 없음 · 임계값 백테스트 전</span></footer>
     </main>
   );

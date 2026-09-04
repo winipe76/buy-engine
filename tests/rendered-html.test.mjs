@@ -24,10 +24,10 @@ test("server-renders the scalable Buy Overview", async () => {
   assert.match(html, /LIGHT BUY/);
 });
 
-test("keeps Fundamental as reference and candidate selection user-controlled", async () => {
+test("shows Fundamental Trend adjustment and keeps candidate selection user-controlled", async () => {
   const response = await render();
   const html = await response.text();
-  assert.match(html, /Fundamental은 Reference로만 사용/);
+  assert.match(html, /Fundamental Trend로 DCA 보정/);
   assert.match(html, /Deactivate는 이력을 삭제하지 않습니다/);
   assert.doesNotMatch(html, /PASS만|Gate 확인 후 추가/);
 });
