@@ -21,3 +21,8 @@ test("rejects a benchmark cache captured before the current session closed", () 
   assert.equal(isCompletedPriceCacheSafe(rows, "2026-08-18T20:16:00Z", afterClose), true);
 });
 
+test("rejects a cache from today that still ends at yesterday's close", () => {
+  const yesterdayOnly = rows.slice(0, 1);
+  assert.equal(isCompletedPriceCacheSafe(yesterdayOnly, "2026-08-18T19:30:00Z", new Date("2026-08-18T20:20:00Z")), false);
+});
+

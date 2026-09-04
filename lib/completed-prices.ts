@@ -28,6 +28,8 @@ export function isCompletedPriceCacheSafe(rows: NumericRow[], snapshotAt: string
   const latestDate = completed.map((row) => String(row.date ?? "")).filter(Boolean).sort().at(-1);
   if (!latestDate) return false;
   const snapshotClock = newYorkClock(new Date(snapshotAt));
+  const currentClock = newYorkClock(now);
+  if (currentClock.minutes >= US_CLOSE_CONFIRMATION_MINUTES && snapshotClock.date === currentClock.date && snapshotClock.minutes < US_CLOSE_CONFIRMATION_MINUTES) return false;
   return snapshotClock.date > latestDate || (snapshotClock.date === latestDate && snapshotClock.minutes >= US_CLOSE_CONFIRMATION_MINUTES);
 }
 
