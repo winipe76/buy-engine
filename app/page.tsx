@@ -484,19 +484,26 @@ function PensionDashboard({ onStock }: { onStock: () => void }) {
   }, []);
   useEffect(() => { queueMicrotask(() => void loadCandidates().catch((error) => setMessage(error.message))); }, [loadCandidates]);
 
-  async function search(event: React.FormEvent) {
-    event.preventDefault();
-    if (!query.trim()) return;
+  const searchEtfs = useCallback(async (value: string, signal?: AbortSignal) => {
+    if (!value.trim()) return;
     setBusy("search"); setMessage("");
     try {
-      const response = await fetch(`/api/pension/etfs/search?q=${encodeURIComponent(query.trim())}`);
+      const response = await fetch(`/api/pension/etfs/search?q=${encodeURIComponent(value.trim())}`, { signal });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "ETF 검색 실패");
       setResults(payload.etfs ?? []);
       if (!(payload.etfs ?? []).length) setMessage("검색 결과가 없습니다.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "ETF 검색 실패"); }
+    } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setMessage(error instanceof Error ? error.message : "ETF 검색 실패"); }
     finally { setBusy(""); }
-  }
+  }, []);
+
+  useEffect(() => {
+    const value = query.trim();
+    if (value.length < 2) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void searchEtfs(value, controller.signal), 350);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, searchEtfs]);
 
   async function add(ticker: string) {
     setBusy(ticker); setMessage("");
@@ -519,7 +526,7 @@ function PensionDashboard({ onStock }: { onStock: () => void }) {
     <section className="hero pension-hero"><div><p className="eyebrow">PENSION BUY ENGINE</p><h1>국내 ETF의<br /><em>가격 수준.</em></h1></div><div className="role-note"><span>THIS STEP</span><strong>ETF 검색 + Valuation</strong><p>개별주식 후보와 분리해 관리합니다. Overheat·DCA·목표비중·리밸런싱은 포함하지 않습니다.</p></div></section>
     <section className="pension-search-card" aria-labelledby="etf-search-title">
       <div><span className="section-kicker">KRX LISTED ETF</span><h2 id="etf-search-title">ETF 검색 및 추가</h2><p>ETF명 또는 6자리 종목코드로 검색하세요.</p></div>
-      <form onSubmit={search}><label className="sr-only" htmlFor="etf-query">ETF명 또는 종목코드</label><input id="etf-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: 금현물, 나스닥, 411060" /><button disabled={busy === "search"}>{busy === "search" ? "검색 중…" : "검색"}</button></form>
+      <form onSubmit={(event) => { event.preventDefault(); void searchEtfs(query); }}><label className="sr-only" htmlFor="etf-query">ETF명 또는 종목코드</label><input id="etf-query" value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder="예: KODEX 반도체, 금현물, 396500" /><button disabled={busy === "search"}>{busy === "search" ? "검색 중…" : "검색"}</button></form>
       {message && <p className="pension-message" aria-live="polite">{message}</p>}
       {!!results.length && <div className="etf-results"><table><thead><tr><th>ETF명</th><th>종목코드</th><th>카테고리</th><th>Valuation Profile</th><th /></tr></thead><tbody>{results.map((etf) => <tr key={etf.ticker}><td><strong>{etf.name}</strong></td><td>{etf.ticker}</td><td>{etf.category}</td><td>{etf.profile}</td><td><button onClick={() => void add(etf.ticker)} disabled={!!busy}>{busy === etf.ticker ? "계산 중…" : candidates.some((item) => item.ticker === etf.ticker) ? "다시 계산" : "후보 추가"}</button></td></tr>)}</tbody></table></div>}
     </section>

@@ -39,7 +39,8 @@ export function classifyEtf(name: string): { profile: PensionProfile; category: 
 export async function searchKrxEtfs(query: string): Promise<EtfSearchResult[]> {
   const searchText = query.trim();
   if (!searchText) return [];
-  const body = new URLSearchParams({ bld: "dbms/comm/finder/finder_dataetfisu", locale: "ko_KR", searchText, delListIn: "" });
+  const codeSearch = /^[0-9A-Z]{6}$/i.test(searchText);
+  const body = new URLSearchParams({ bld: "dbms/comm/finder/finder_dataetfisu", locale: "ko_KR", searchText: codeSearch ? "" : searchText, delListIn: "" });
   const response = await fetch("https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", Referer: "https://data.krx.co.kr/", "X-Requested-With": "XMLHttpRequest" },
@@ -47,7 +48,7 @@ export async function searchKrxEtfs(query: string): Promise<EtfSearchResult[]> {
   });
   if (!response.ok) throw new Error("KRX ETF 검색에 연결하지 못했습니다.");
   const payload = await response.json() as { block1?: Array<{ full_code?: string; short_code?: string; codeName?: string; dellistDd?: string }> };
-  return (payload.block1 ?? []).filter((item) => item.short_code && item.codeName && !item.dellistDd).slice(0, 50).map((item) => ({
+  return (payload.block1 ?? []).filter((item) => item.short_code && item.codeName && !item.dellistDd && (!codeSearch || item.short_code.toUpperCase() === searchText.toUpperCase())).slice(0, 50).map((item) => ({
     ticker: item.short_code!, isin: item.full_code ?? "", name: item.codeName!, ...classifyEtf(item.codeName!),
   }));
 }
