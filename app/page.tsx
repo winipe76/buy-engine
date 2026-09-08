@@ -517,6 +517,19 @@ function PensionDashboard({ onStock }: { onStock: () => void }) {
     finally { setBusy(""); }
   }
 
+  async function remove(ticker: string) {
+    if (!window.confirm(`${ticker}를 퇴직연금 후보에서 제거할까요?`)) return;
+    setBusy(ticker); setMessage("");
+    try {
+      const response = await fetch(`/api/pension/etfs?ticker=${encodeURIComponent(ticker)}`, { method: "DELETE" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "ETF 제거 실패");
+      await loadCandidates();
+      setMessage(`${ticker}를 퇴직연금 후보에서 제거했습니다.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "ETF 제거 실패"); }
+    finally { setBusy(""); }
+  }
+
   return <main>
     <header className="site-header">
       <div className="brand"><div className="brand-mark">B</div><div><strong>BUY ENGINE</strong><span>퇴직연금 ETF · Valuation</span></div></div>
@@ -536,7 +549,7 @@ function PensionDashboard({ onStock }: { onStock: () => void }) {
       <div className="valuation-grid">{candidates.map((candidate) => {
         let valuation: PensionValuation;
         try { valuation = JSON.parse(candidate.valuation_json) as PensionValuation; } catch { valuation = { status: "unavailable", source: "—", note: "저장된 Valuation을 읽지 못했습니다." }; }
-        return <article className="valuation-card" key={candidate.ticker}><header><div><span>{candidate.category} · {candidate.valuation_profile}</span><h3>{candidate.name}</h3><p>{candidate.ticker}</p></div>{valuation.price !== undefined && <strong>{valuation.price.toLocaleString("ko-KR")} <small>{valuation.currency}</small></strong>}</header>{valuation.status === "available" ? <div className="valuation-metrics">{valuation.metrics?.map((metric) => <div key={metric.label}><span>{metric.label}</span><strong>{metric.value > 0 ? "+" : ""}{metric.value.toFixed(1)}{metric.unit}</strong><small>{metric.note}</small></div>)}</div> : <div className="valuation-unavailable"><strong>Valuation 확인 필요</strong><span>{valuation.error ?? valuation.note}</span></div>}<footer><span>{valuation.note}</span><span>{valuation.as_of ?? candidate.valuation_as_of ?? "—"} · {valuation.source}</span></footer></article>;
+        return <article className="valuation-card" key={candidate.ticker}><header><div><span>{candidate.category} · {candidate.valuation_profile}</span><h3>{candidate.name}</h3><p>{candidate.ticker}</p></div><div className="valuation-card-actions">{valuation.price !== undefined && <strong>{valuation.price.toLocaleString("ko-KR")} <small>{valuation.currency}</small></strong>}<div><button onClick={() => void add(candidate.ticker)} disabled={!!busy}>값 갱신</button><button className="remove" onClick={() => void remove(candidate.ticker)} disabled={!!busy}>제거</button></div></div></header>{valuation.status === "available" ? <div className="valuation-metrics">{valuation.metrics?.map((metric) => <div key={metric.label}><span>{metric.label}</span><strong>{metric.value > 0 ? "+" : ""}{metric.value.toFixed(1)}{metric.unit}</strong><small>{metric.note}</small></div>)}</div> : <div className="valuation-unavailable"><strong>Valuation 확인 필요</strong><span>{valuation.error ?? valuation.note}</span></div>}<footer><span>{valuation.note}</span><span>{valuation.as_of ?? candidate.valuation_as_of ?? "—"} · {valuation.source}</span></footer></article>;
       })}</div>
     </section>
   </main>;

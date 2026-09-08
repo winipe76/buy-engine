@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateHistoricalValuation, classifyEtf, searchKrxEtfs } from "../lib/pension-etf.ts";
+import { calculateHistoricalValuation, classifyEtf, parseNaverPriceHistory, searchKrxEtfs } from "../lib/pension-etf.ts";
 
 test("classifies pension ETF valuation profiles without mixing stock candidates", () => {
   assert.equal(classifyEtf("ACE KRX금현물").profile, "GOLD");
@@ -13,6 +13,11 @@ test("calculates price-history valuation and dividend yield", () => {
   assert.equal(metrics[0].label, "최근 12개월 분배금 수익률");
   assert.ok(Math.abs(metrics[0].value - 10 / 351 * 100) < 1e-10);
   assert.equal(metrics.at(-1).value, 0);
+});
+
+test("parses the current price and date from Naver ETF history", () => {
+  const rows = Array.from({ length: 30 }, (_, index) => `<item data="202609${String(index + 1).padStart(2, "0")}|1|2|0|${100 + index}|10" />`).join("");
+  assert.deepEqual(parseNaverPriceHistory(`<chartdata>${rows}</chartdata>`), { closes: Array.from({ length: 30 }, (_, index) => 100 + index), asOf: "2026-09-30" });
 });
 
 test("finds an ETF by code even though the KRX finder only searches names", async () => {

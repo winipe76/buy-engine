@@ -34,3 +34,11 @@ export async function POST(request: Request) {
     return json({ error: error instanceof Error ? error.message : "ETF 후보 저장 실패" }, 400);
   }
 }
+
+export async function DELETE(request: Request) {
+  if (!runtime.DB) return json({ error: "Pension DB 연결이 필요합니다." }, 503);
+  const ticker = new URL(request.url).searchParams.get("ticker")?.trim().toUpperCase() ?? "";
+  if (!/^[0-9A-Z]{6}$/.test(ticker)) return json({ error: "유효한 국내 ETF 종목코드가 아닙니다." }, 400);
+  await runtime.DB.prepare("DELETE FROM pension_etf_candidates WHERE ticker = ?").bind(ticker).run();
+  return json({ status: "removed", ticker });
+}
