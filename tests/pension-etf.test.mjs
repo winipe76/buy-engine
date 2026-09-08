@@ -27,3 +27,14 @@ test("finds an ETF by code even though the KRX finder only searches names", asyn
   try { assert.deepEqual((await searchKrxEtfs("396500")).map((item) => item.ticker), ["396500"]); }
   finally { globalThis.fetch = originalFetch; }
 });
+
+test("falls back to the full domestic ETF list when KRX blocks the cloud worker", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => ++calls === 1 ? new Response("blocked", { status: 403 }) : new Response(new TextEncoder().encode(JSON.stringify({ result: { etfItemList: [
+    { itemcode: "396500", itemname: "TIGER Semiconductor TOP10" },
+    { itemcode: "411060", itemname: "ACE Gold" },
+  ] } })));
+  try { assert.deepEqual((await searchKrxEtfs("396500")).map((item) => item.ticker), ["396500"]); }
+  finally { globalThis.fetch = originalFetch; }
+});

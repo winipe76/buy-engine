@@ -41,16 +41,27 @@ export async function searchKrxEtfs(query: string): Promise<EtfSearchResult[]> {
   if (!searchText) return [];
   const codeSearch = /^[0-9A-Z]{6}$/i.test(searchText);
   const body = new URLSearchParams({ bld: "dbms/comm/finder/finder_dataetfisu", locale: "ko_KR", searchText: codeSearch ? "" : searchText, delListIn: "" });
-  const response = await fetch("https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", Referer: "https://data.krx.co.kr/", "X-Requested-With": "XMLHttpRequest" },
-    body,
-  });
-  if (!response.ok) throw new Error("KRX ETF 검색에 연결하지 못했습니다.");
-  const payload = await response.json() as { block1?: Array<{ full_code?: string; short_code?: string; codeName?: string; dellistDd?: string }> };
-  return (payload.block1 ?? []).filter((item) => item.short_code && item.codeName && !item.dellistDd && (!codeSearch || item.short_code.toUpperCase() === searchText.toUpperCase())).slice(0, 50).map((item) => ({
-    ticker: item.short_code!, isin: item.full_code ?? "", name: item.codeName!, ...classifyEtf(item.codeName!),
-  }));
+  try {
+    const response = await fetch("https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", Referer: "https://data.krx.co.kr/", "X-Requested-With": "XMLHttpRequest" },
+      body,
+    });
+    if (!response.ok) throw new Error("KRX blocked");
+    const payload = await response.json() as { block1?: Array<{ full_code?: string; short_code?: string; codeName?: string; dellistDd?: string }> };
+    return (payload.block1 ?? []).filter((item) => item.short_code && item.codeName && !item.dellistDd && (!codeSearch || item.short_code.toUpperCase() === searchText.toUpperCase())).slice(0, 50).map((item) => ({
+      ticker: item.short_code!, isin: item.full_code ?? "", name: item.codeName!, ...classifyEtf(item.codeName!),
+    }));
+  } catch {
+    const response = await fetch("https://finance.naver.com/api/sise/etfItemList.nhn", { headers: { Referer: "https://finance.naver.com/", "User-Agent": "Mozilla/5.0" } });
+    if (!response.ok) throw new Error("국내 ETF 검색 데이터에 연결하지 못했습니다.");
+    const text = new TextDecoder("euc-kr").decode(await response.arrayBuffer());
+    const payload = JSON.parse(text) as { result?: { etfItemList?: Array<{ itemcode?: string; itemname?: string }> } };
+    const terms = searchText.toUpperCase().split(/\s+/);
+    return (payload.result?.etfItemList ?? []).filter((item) => item.itemcode && item.itemname && terms.every((term) => `${item.itemcode} ${item.itemname}`.toUpperCase().includes(term))).slice(0, 50).map((item) => ({
+      ticker: item.itemcode!, isin: "", name: item.itemname!, ...classifyEtf(item.itemname!),
+    }));
+  }
 }
 
 function median(values: number[]) {
