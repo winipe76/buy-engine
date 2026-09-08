@@ -304,7 +304,7 @@ function analyzedCompany(candidate: CandidateApiRecord, reference: Pick<Company,
   };
 }
 
-export default function Home() {
+function StockDashboard({ onPension }: { onPension: () => void }) {
   const registry = useCandidateRegistry();
   const [filter, setFilter] = useState<"ALL" | Action>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("multiplier");
@@ -368,6 +368,7 @@ export default function Home() {
     <main>
       <header className="site-header">
         <div className="brand"><div className="brand-mark">B</div><div><strong>BUY ENGINE</strong><span>지금 사도 되는가 · 얼마나 살 것인가</span></div></div>
+        <nav className="engine-nav" aria-label="Buy Engine 메뉴"><button className="selected">개별주식</button><button onClick={onPension}>퇴직연금</button></nav>
         <div className="status-cluster"><span className="live-dot" /><div><strong>DATA QUALITY {overallQuality}</strong><span>{latestPriceAsOf ?? "데이터 로딩 중"} · FMP</span></div></div>
       </header>
 
@@ -462,5 +463,80 @@ export default function Home() {
       <footer><span>0×는 매도가 아닌 신규 매수 중단(PAUSE)입니다.</span><span>SELL 기능 없음 · 임계값 백테스트 전</span></footer>
     </main>
   );
+}
+
+type PensionSearchResult = { ticker: string; isin: string; name: string; category: string; profile: string };
+type PensionMetric = { label: string; value: number; unit: string; note: string };
+type PensionValuation = { status: "available" | "unavailable"; price?: number; currency?: string; as_of?: string; metrics?: PensionMetric[]; source: string; note: string; error?: string };
+type PensionCandidate = { ticker: string; isin: string; name: string; category: string; valuation_profile: string; valuation_json: string; valuation_as_of: string | null };
+
+function PensionDashboard({ onStock }: { onStock: () => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PensionSearchResult[]>([]);
+  const [candidates, setCandidates] = useState<PensionCandidate[]>([]);
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const loadCandidates = useCallback(async () => {
+    const response = await fetch("/api/pension/etfs", { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error ?? "퇴직연금 후보를 불러오지 못했습니다.");
+    setCandidates(Array.isArray(payload.candidates) ? payload.candidates : []);
+  }, []);
+  useEffect(() => { queueMicrotask(() => void loadCandidates().catch((error) => setMessage(error.message))); }, [loadCandidates]);
+
+  async function search(event: React.FormEvent) {
+    event.preventDefault();
+    if (!query.trim()) return;
+    setBusy("search"); setMessage("");
+    try {
+      const response = await fetch(`/api/pension/etfs/search?q=${encodeURIComponent(query.trim())}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "ETF 검색 실패");
+      setResults(payload.etfs ?? []);
+      if (!(payload.etfs ?? []).length) setMessage("검색 결과가 없습니다.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "ETF 검색 실패"); }
+    finally { setBusy(""); }
+  }
+
+  async function add(ticker: string) {
+    setBusy(ticker); setMessage("");
+    try {
+      const response = await fetch("/api/pension/etfs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "ETF 추가 실패");
+      await loadCandidates();
+      setMessage(`${ticker}를 퇴직연금 후보에 추가하고 Valuation을 계산했습니다.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "ETF 추가 실패"); }
+    finally { setBusy(""); }
+  }
+
+  return <main>
+    <header className="site-header">
+      <div className="brand"><div className="brand-mark">B</div><div><strong>BUY ENGINE</strong><span>퇴직연금 ETF · Valuation</span></div></div>
+      <nav className="engine-nav" aria-label="Buy Engine 메뉴"><button onClick={onStock}>개별주식</button><button className="selected">퇴직연금</button></nav>
+      <div className="status-cluster"><span className="live-dot" /><div><strong>SEPARATE PENSION MODULE</strong><span>KRX ETF 검색</span></div></div>
+    </header>
+    <section className="hero pension-hero"><div><p className="eyebrow">PENSION BUY ENGINE</p><h1>국내 ETF의<br /><em>가격 수준.</em></h1></div><div className="role-note"><span>THIS STEP</span><strong>ETF 검색 + Valuation</strong><p>개별주식 후보와 분리해 관리합니다. Overheat·DCA·목표비중·리밸런싱은 포함하지 않습니다.</p></div></section>
+    <section className="pension-search-card" aria-labelledby="etf-search-title">
+      <div><span className="section-kicker">KRX LISTED ETF</span><h2 id="etf-search-title">ETF 검색 및 추가</h2><p>ETF명 또는 6자리 종목코드로 검색하세요.</p></div>
+      <form onSubmit={search}><label className="sr-only" htmlFor="etf-query">ETF명 또는 종목코드</label><input id="etf-query" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: 금현물, 나스닥, 411060" /><button disabled={busy === "search"}>{busy === "search" ? "검색 중…" : "검색"}</button></form>
+      {message && <p className="pension-message" aria-live="polite">{message}</p>}
+      {!!results.length && <div className="etf-results"><table><thead><tr><th>ETF명</th><th>종목코드</th><th>카테고리</th><th>Valuation Profile</th><th /></tr></thead><tbody>{results.map((etf) => <tr key={etf.ticker}><td><strong>{etf.name}</strong></td><td>{etf.ticker}</td><td>{etf.category}</td><td>{etf.profile}</td><td><button onClick={() => void add(etf.ticker)} disabled={!!busy}>{busy === etf.ticker ? "계산 중…" : candidates.some((item) => item.ticker === etf.ticker) ? "다시 계산" : "후보 추가"}</button></td></tr>)}</tbody></table></div>}
+    </section>
+    <section className="pension-valuations" aria-labelledby="valuation-title">
+      <div className="pension-section-head"><div><span className="section-kicker">PENSION CANDIDATES</span><h2 id="valuation-title">Valuation</h2></div><p>가격 이력 기반 · 매수 신호 아님</p></div>
+      {!candidates.length && <div className="candidate-empty"><strong>등록된 ETF가 없습니다.</strong><span>위 검색창에서 ETF를 찾아 후보로 추가하세요.</span></div>}
+      <div className="valuation-grid">{candidates.map((candidate) => {
+        let valuation: PensionValuation;
+        try { valuation = JSON.parse(candidate.valuation_json) as PensionValuation; } catch { valuation = { status: "unavailable", source: "—", note: "저장된 Valuation을 읽지 못했습니다." }; }
+        return <article className="valuation-card" key={candidate.ticker}><header><div><span>{candidate.category} · {candidate.valuation_profile}</span><h3>{candidate.name}</h3><p>{candidate.ticker}</p></div>{valuation.price !== undefined && <strong>{valuation.price.toLocaleString("ko-KR")} <small>{valuation.currency}</small></strong>}</header>{valuation.status === "available" ? <div className="valuation-metrics">{valuation.metrics?.map((metric) => <div key={metric.label}><span>{metric.label}</span><strong>{metric.value > 0 ? "+" : ""}{metric.value.toFixed(1)}{metric.unit}</strong><small>{metric.note}</small></div>)}</div> : <div className="valuation-unavailable"><strong>Valuation 확인 필요</strong><span>{valuation.error ?? valuation.note}</span></div>}<footer><span>{valuation.note}</span><span>{valuation.as_of ?? candidate.valuation_as_of ?? "—"} · {valuation.source}</span></footer></article>;
+      })}</div>
+    </section>
+  </main>;
+}
+
+export default function Home() {
+  const [section, setSection] = useState<"stock" | "pension">("stock");
+  return section === "stock" ? <StockDashboard onPension={() => setSection("pension")} /> : <PensionDashboard onStock={() => setSection("stock")} />;
 }
 

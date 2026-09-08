@@ -65,3 +65,15 @@ export const buyApiSnapshots = sqliteTable("buy_api_snapshots", {
   uniqueIndex("idx_buy_api_ticker_dataset_snapshot").on(table.ticker, table.dataset, table.snapshotAt),
 ]);
 
+export const pensionEtfCandidates = sqliteTable("pension_etf_candidates", {
+  ticker: text("ticker").primaryKey(),
+  isin: text("isin").notNull(),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  valuationProfile: text("valuation_profile").notNull(),
+  valuationJson: text("valuation_json").notNull(),
+  valuationAsOf: text("valuation_as_of"),
+  addedAt: text("added_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
