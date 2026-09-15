@@ -452,7 +452,7 @@ function StockDashboard({ onPension }: { onPension: () => void }) {
         </div>
       </article>}
 
-      <section className="method-note"><div className="method-index">01</div><div><h3>DCA는 Value와 Overheat만으로 결정합니다.</h3><p>1.5×는 Value 80 이상·Overheat 25 미만에서만 허용하고, Overheat 75 이상 또는 Value 20 미만이면 신규 매수를 중단합니다.</p></div><div className="legend"><span><i className="legend-dot green" />BUY</span><span><i className="legend-dot amber" />PAUSE</span><span><i className="legend-dot red" />과열·부담</span></div></section>
+      <section className="method-note"><div className="method-index">01</div><div><h3>DCA는 Value와 Overheat만으로 결정합니다.</h3><p>1.5×는 Value 70 이상·Overheat 25 미만에서만 허용하고, Overheat 75 이상 또는 Value 20 미만이면 신규 매수를 중단합니다.</p></div><div className="legend"><span><i className="legend-dot green" />BUY</span><span><i className="legend-dot amber" />PAUSE</span><span><i className="legend-dot red" />과열·부담</span></div></section>
       <footer><span>0×는 매도가 아닌 신규 매수 중단(PAUSE)입니다.</span><span>SELL 기능 없음 · 임계값 백테스트 전</span></footer>
     </main>
   );

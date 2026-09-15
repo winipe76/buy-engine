@@ -11,6 +11,16 @@
 
 ---
 
+## 2026-09-15 — 1.5× Value 기준 완화
+
+- 우량 성장주의 Value Score가 80점까지 상승하기 어려운 점을 반영해 1.5×의 Value 기준을 `80 → 70`으로 완화했습니다.
+- Overheat 기준은 `< 25`로 유지해 과열되지 않은 구간에서만 1.5×를 허용합니다.
+- PAUSE 및 0.5×·1.0× 기준은 변경하지 않았습니다.
+- 전체 DCA 조건을 `DCA_RULES.md`에 고정 문서로 기록했습니다.
+- 계산 버전을 `buy-engine-v1.6-value-70-threshold`로 올렸습니다.
+
+---
+
 ## 2026-09-15 — DCA를 Value × Overheat 전용으로 변경
 
 - Fundamental Stage, Score, Trend를 DCA 계산 입력과 보정에서 완전히 제외했습니다.

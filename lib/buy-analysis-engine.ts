@@ -99,7 +99,7 @@ export function calculateValue(input: {
 
 export function decideDca(valueScore: number | null, overheatScore: number): DcaDecision {
   const overheatState = overheatScore < 25 ? "LOW" : overheatScore < 50 ? "NORMAL" : overheatScore < 75 ? "HIGH" : "EXTREME";
-  const valueState = valueScore === null ? null : valueScore >= 80 ? "VERY_UNDERVALUED" : valueScore >= 60 ? "UNDERVALUED" : valueScore >= 40 ? "FAIR" : valueScore >= 20 ? "OVERVALUED" : "EXTREME_OVERVALUED";
+  const valueState = valueScore === null ? null : valueScore >= 70 ? "VERY_UNDERVALUED" : valueScore >= 60 ? "UNDERVALUED" : valueScore >= 40 ? "FAIR" : valueScore >= 20 ? "OVERVALUED" : "EXTREME_OVERVALUED";
   if (!valueState) return { value_state: null, overheat_state: overheatState, base_multiplier: null, multiplier: null, action: "REVIEW", reason: "Value data coverage is insufficient" };
   const matrix: Record<string, Record<string, number>> = {
     VERY_UNDERVALUED: { LOW: 1.5, NORMAL: 1, HIGH: 0.5, EXTREME: 0 },

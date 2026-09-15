@@ -2,7 +2,7 @@ import { calculateOverheat, calculateValue, decideDca, numeric, type NumericRow 
 import { completedUsDailyRows, isCompletedPriceCacheSafe } from "@/lib/completed-prices";
 
 const FMP_BASE_URL = "https://financialmodelingprep.com/stable";
-const SOURCE_VERSION = "buy-engine-v1.5-value-overheat-only";
+const SOURCE_VERSION = "buy-engine-v1.6-value-70-threshold";
 const BENCHMARK_CACHE_MS = 12 * 60 * 60 * 1000;
 
 type AnalysisRuntime = { DB: D1Database; FMP_API_KEY: string };

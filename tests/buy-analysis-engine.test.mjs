@@ -8,9 +8,9 @@ test("calculates RSI14 with Wilder recursive smoothing", () => {
 });
 
 test("uses only Value and Overheat for the stricter DCA boundaries", () => {
-  assert.equal(decideDca(80, 24.99).multiplier, 1.5);
-  assert.equal(decideDca(80, 25).multiplier, 1);
-  assert.equal(decideDca(79.99, 10).multiplier, 1);
+  assert.equal(decideDca(70, 24.99).multiplier, 1.5);
+  assert.equal(decideDca(70, 25).multiplier, 1);
+  assert.equal(decideDca(69.99, 10).multiplier, 1);
   assert.equal(decideDca(100, 75).action, "PAUSE");
   assert.equal(decideDca(19.99, 0).action, "PAUSE");
   assert.equal(decideDca(30, 50).action, "PAUSE");
