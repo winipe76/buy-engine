@@ -11,6 +11,16 @@
 
 ---
 
+## 2026-09-15 — DCA를 Value × Overheat 전용으로 변경
+
+- Fundamental Stage, Score, Trend를 DCA 계산 입력과 보정에서 완전히 제외했습니다.
+- 1.5×는 `Value ≥ 80`이면서 `Overheat < 25`인 경우에만 허용합니다.
+- `Overheat ≥ 75` 또는 `Value < 20`이면 Fundamental 상태와 관계없이 PAUSE입니다.
+- 기존 후보의 Fundamental 정보는 원본 참고 정보로 계속 표시하며, Value·Overheat 계산 자체는 변경하지 않았습니다.
+- 계산 버전을 `buy-engine-v1.5-value-overheat-only`로 올렸습니다.
+
+---
+
 ## 2026-09-08 — 국내 ETF 현재가 표시 및 후보 제거
 
 - 클라우드에서 Yahoo Finance 가격 이력을 받지 못해 ETF 현재가와 Valuation이 비어 있던 원인을 수정했습니다.

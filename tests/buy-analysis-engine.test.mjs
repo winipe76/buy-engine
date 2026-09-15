@@ -1,21 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateOverheat, calculateRsi, calculateValue, decideDca, deriveFundamentalTrend } from "../lib/buy-analysis-engine.ts";
+import { calculateOverheat, calculateRsi, calculateValue, decideDca } from "../lib/buy-analysis-engine.ts";
 
 test("calculates RSI14 with Wilder recursive smoothing", () => {
   const closes = [44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28, 46.00, 46.03, 46.41, 46.22, 45.64];
   assert.ok(Math.abs(calculateRsi(closes, 14) - 57.91502067008556) < 1e-10);
 });
 
-test("keeps the base DCA matrix and applies the V1.4 Fundamental Trend adjustment", () => {
-  assert.deepEqual(decideDca(85, 10), {
-    fundamental_context: "TREND_ADJUSTMENT", value_state: "VERY_UNDERVALUED", overheat_state: "LOW", base_multiplier: 1.5,
-    fundamental_trend: { state: "STABLE", adjustment: 0, reason: "No fundamental trend input" },
-    multiplier: 1.5, action: "BUY", reason: "VERY_UNDERVALUED value, LOW overheat; Fundamental trend STABLE (+0.0x)",
-  });
-  const slowing = deriveFundamentalTrend({ stage: "watch", currentScore: 80, previousScore: 85 });
-  assert.equal(decideDca(85, 10, slowing).multiplier, 1);
-  assert.equal(decideDca(10, 90).action, "PAUSE");
+test("uses only Value and Overheat for the stricter DCA boundaries", () => {
+  assert.equal(decideDca(80, 24.99).multiplier, 1.5);
+  assert.equal(decideDca(80, 25).multiplier, 1);
+  assert.equal(decideDca(79.99, 10).multiplier, 1);
+  assert.equal(decideDca(100, 75).action, "PAUSE");
+  assert.equal(decideDca(19.99, 0).action, "PAUSE");
+  assert.equal(decideDca(30, 50).action, "PAUSE");
   assert.equal(decideDca(null, 10).action, "REVIEW");
 });
 

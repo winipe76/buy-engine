@@ -39,9 +39,6 @@ type Company = {
   dataQualityWarnings?: string[];
   sourceVersion?: string | null;
   baseMultiplier?: number | null;
-  fundamentalTrendState?: string | null;
-  fundamentalTrendAdjustment?: number | null;
-  fundamentalTrendReason?: string | null;
 };
 
 const companies: Company[] = [
@@ -55,10 +52,10 @@ const companies: Company[] = [
     value: 70.5,
     overheat: 13.8,
     deltaOverheat: 0.46,
-    multiplier: 1.5,
+    multiplier: 1,
     action: "BUY",
     actionTone: "positive",
-    summary: "Value는 매력 구간, Overheat는 낮은 구간입니다. 현재 규칙은 기본 DCA보다 적극적인 매수를 제안합니다.",
+    summary: "Value는 매력 구간, Overheat는 낮은 구간입니다. 현재 Value × Overheat Matrix는 기본 매수를 제안합니다.",
     valueState: "UNDERVALUED",
     overheatState: "LOW · HEATING",
     valueMetrics: [
@@ -88,7 +85,7 @@ const companies: Company[] = [
     multiplier: 0,
     action: "PAUSE",
     actionTone: "caution",
-    summary: "Value 부담과 극단적 Overheat가 겹쳐 신규 매수를 중단합니다. Fundamental Trend 보정 후에도 DCA는 0×입니다.",
+    summary: "Value 부담과 극단적 Overheat가 겹쳐 신규 매수를 중단합니다.",
     valueState: "EXTREME OVERVALUED",
     overheatState: "EXTREME · COOLING",
     valueMetrics: [
@@ -260,7 +257,6 @@ function analyzedCompany(candidate: CandidateApiRecord, reference: Pick<Company,
   const value = parsedMetrics(candidate.value_metrics_json);
   const overheat = parsedMetrics(candidate.overheat_metrics_json);
   const quality = parsedMetrics(candidate.data_quality_json);
-  const trend = quality.fundamental_trend && typeof quality.fundamental_trend === "object" ? quality.fundamental_trend as Record<string, unknown> : {};
   const forwardPe = metricNumber(value, "forward_pe"), peg = metricNumber(value, "peg"), evSalesGrowth = metricNumber(value, "ev_sales_growth"), fcfYield = metricNumber(value, "fcf_yield");
   const price = candidate.price;
   const ma20 = metricNumber(overheat, "ma20"), ma50 = metricNumber(overheat, "ma50"), ma200 = metricNumber(overheat, "ma200");
@@ -284,9 +280,6 @@ function analyzedCompany(candidate: CandidateApiRecord, reference: Pick<Company,
     dataQualityStatus: typeof quality.status === "string" ? quality.status : null,
     dataQualityWarnings: Array.isArray(quality.warnings) ? quality.warnings.filter((warning): warning is string => typeof warning === "string") : [],
     sourceVersion: candidate.source_version, baseMultiplier: metricNumber(quality, "base_dca_multiplier"),
-    fundamentalTrendState: typeof trend.state === "string" ? trend.state : null,
-    fundamentalTrendAdjustment: metricNumber(trend, "adjustment"),
-    fundamentalTrendReason: typeof trend.reason === "string" ? trend.reason : null,
     valueMetrics: [
       { label: "FCF Yield", value: fcfYield === null ? "산출 불가" : `${(fcfYield * 100).toFixed(2)}%`, note: "TTM FCF / 현재 시가총액", tone: fcfYield !== null && fcfYield >= .03 ? "positive" : "neutral" },
       { label: "Forward P/E", value: forwardPe === null ? "산출 불가" : `${forwardPe.toFixed(1)}배`, note: "FY1 EPS 컨센서스", tone: forwardPe !== null && forwardPe <= 30 ? "positive" : "caution" },
@@ -374,7 +367,7 @@ function StockDashboard({ onPension }: { onPension: () => void }) {
 
       <section className="hero compact-hero">
         <div><p className="eyebrow">PORTFOLIO BUY OVERVIEW</p><h1>매수 판단을<br /><em>한눈에.</em></h1></div>
-        <div className="role-note"><span>ROLE</span><strong>Fundamental Trend로 DCA 보정</strong><p>Value + Overheat 기본 DCA에 성장과 가이던스 추세를 ±0.5~1.0× 반영합니다.</p></div>
+        <div className="role-note"><span>ROLE</span><strong>Value × Overheat로 DCA 결정</strong><p>Fundamental은 참고 정보로만 표시하며 DCA 계산에는 사용하지 않습니다.</p></div>
       </section>
 
       <section className="overview-card" aria-labelledby="overview-title">
@@ -449,7 +442,7 @@ function StockDashboard({ onPension }: { onPension: () => void }) {
             <div><span>재무 기준일</span><strong>{selected.financialAsOf ?? "—"}</strong></div>
             <div><span>계산 버전</span><strong>{selected.sourceVersion ?? "—"}</strong></div>
           </div>
-          <div className="audit-decision"><strong>기본 DCA {formatMultiplier(selected.baseMultiplier ?? null)} + Fundamental {selected.fundamentalTrendAdjustment === null || selected.fundamentalTrendAdjustment === undefined ? "—" : `${selected.fundamentalTrendAdjustment >= 0 ? "+" : ""}${selected.fundamentalTrendAdjustment.toFixed(1)}×`} = 최종 {formatMultiplier(selected.multiplier)}</strong><span>{selected.fundamentalTrendState ? `${selected.fundamentalTrendState} · ${selected.fundamentalTrendReason}` : "v1.4 보정 근거는 다음 지표 업데이트 후 기록됩니다."}</span></div>
+          <div className="audit-decision"><strong>{selected.valueState} × {selected.overheatState.split(" · ")[0]} = DCA {formatMultiplier(selected.multiplier)}</strong><span>Fundamental Stage와 Score는 DCA 계산에 반영하지 않습니다.</span></div>
           {Boolean(selected.dataQualityWarnings?.length) && <ul className="audit-warnings">{selected.dataQualityWarnings!.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
         </section>
 
@@ -459,7 +452,7 @@ function StockDashboard({ onPension }: { onPension: () => void }) {
         </div>
       </article>}
 
-      <section className="method-note"><div className="method-index">01</div><div><h3>Fundamental Trend는 DCA를 한 단계 보정합니다.</h3><p>Value + Overheat 기본 DCA에 성장 둔화·가이던스 하향은 감산하고, 개선 추세는 가산합니다. 최종 범위는 0~1.5×입니다.</p></div><div className="legend"><span><i className="legend-dot green" />BUY</span><span><i className="legend-dot amber" />PAUSE</span><span><i className="legend-dot red" />과열·부담</span></div></section>
+      <section className="method-note"><div className="method-index">01</div><div><h3>DCA는 Value와 Overheat만으로 결정합니다.</h3><p>1.5×는 Value 80 이상·Overheat 25 미만에서만 허용하고, Overheat 75 이상 또는 Value 20 미만이면 신규 매수를 중단합니다.</p></div><div className="legend"><span><i className="legend-dot green" />BUY</span><span><i className="legend-dot amber" />PAUSE</span><span><i className="legend-dot red" />과열·부담</span></div></section>
       <footer><span>0×는 매도가 아닌 신규 매수 중단(PAUSE)입니다.</span><span>SELL 기능 없음 · 임계값 백테스트 전</span></footer>
     </main>
   );
