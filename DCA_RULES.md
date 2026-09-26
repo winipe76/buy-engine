@@ -1,7 +1,8 @@
 # Buy Engine DCA Rules
 
-기준 버전: `buy-engine-v1.6-value-70-threshold`  
-적용일: 2026-09-15
+기준 버전: `buy-engine-v1.7-negative-growth-value`
+
+적용일: 2026-09-26 (다음 지표 업데이트부터)
 
 ## 기본 원칙
 
@@ -50,3 +51,11 @@
 - 계산식이나 경계값을 바꾸면 `source_version`을 변경한다.
 - 변경 내용은 `DASHBOARD_REVISIONS.md`에 날짜와 함께 누적 기록한다.
 - 기존 Snapshot은 당시 `source_version`을 유지하며, 새 기준은 다음 지표 업데이트부터 적용한다.
+
+## Value 데이터 정책 (v1.7)
+
+- DCA Matrix와 Fundamental 제외 원칙은 v1.6 그대로 유지한다.
+- 유효한 음의 EPS/매출 성장률은 대응 PEG/EV-Sales-Growth component에 0점으로 포함한다. 기존 동일 가중치 평균을 유지한다.
+- 필수 입력 누락·비유한 값·growth 0은 missing으로 제외한다. 원본 성장률은 비율 단위로 보존한다.
+- 기존 정상 3개 이상 component 조합 또는 유효한 Forward P/E와 FCF Yield 조합이면 산출한다. penalty는 충분성 개수에 사용하지 않는다.
+- 나머지는 null/REVIEW이며 화면에 N/A로 표시한다. 실제 0점은 0.0이다. 과거 Snapshot은 재작성하지 않는다.

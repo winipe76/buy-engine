@@ -1,5 +1,7 @@
 "use client";
 
+import { formatValueScore } from "@/lib/buy-analysis-engine";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Tone = "positive" | "caution" | "negative" | "neutral";
@@ -20,7 +22,7 @@ type Company = {
   fundamentalStage: FundamentalStage | "unavailable";
   fundamentalScore: number | null;
   fundamentalUpdatedAt: string | null;
-  value: number;
+  value: number | null;
   overheat: number;
   deltaOverheat: number;
   multiplier: number | null;
@@ -130,17 +132,17 @@ function SortButton({ label, sortKey, active, direction, onSort }: {
   );
 }
 
-function ScoreGauge({ label, score, tone }: { label: string; score: number; tone: Tone }) {
+function ScoreGauge({ label, score, tone }: { label: string; score: number | null; tone: Tone }) {
   return (
     <div className="gauge">
-      <div className="gauge-head"><span>{label}</span><strong>{score.toFixed(1)}</strong></div>
-      <div className="gauge-track"><span className={`gauge-fill fill-${tone}`} style={{ width: `${score}%` }} /></div>
+      <div className="gauge-head"><span>{label}</span><strong>{formatValueScore(score)}</strong></div>
+      <div className="gauge-track">{score !== null && Number.isFinite(score) && <span className={`gauge-fill fill-${tone}`} style={{ width: `${score}%` }} />}</div>
     </div>
   );
 }
 
 function MetricPanel({ title, subtitle, metrics, score, tone }: {
-  title: string; subtitle: string; metrics: ComponentMetric[]; score: number; tone: Tone;
+  title: string; subtitle: string; metrics: ComponentMetric[]; score: number | null; tone: Tone;
 }) {
   return (
     <section className="metric-panel">
@@ -258,6 +260,9 @@ function analyzedCompany(candidate: CandidateApiRecord, reference: Pick<Company,
   const overheat = parsedMetrics(candidate.overheat_metrics_json);
   const quality = parsedMetrics(candidate.data_quality_json);
   const forwardPe = metricNumber(value, "forward_pe"), peg = metricNumber(value, "peg"), evSalesGrowth = metricNumber(value, "ev_sales_growth"), fcfYield = metricNumber(value, "fcf_yield");
+  const components = value.components as Record<string, { status?: string }> | undefined;
+  const pegPenalty = components?.peg?.status === "negative_growth";
+  const revenuePenalty = components?.ev_sales_growth?.status === "negative_growth";
   const price = candidate.price;
   const ma20 = metricNumber(overheat, "ma20"), ma50 = metricNumber(overheat, "ma50"), ma200 = metricNumber(overheat, "ma200");
   const ma20Distance = metricNumber(overheat, "ma20_distance") ?? (ma20 ? price / ma20 - 1 : null);
@@ -269,9 +274,9 @@ function analyzedCompany(candidate: CandidateApiRecord, reference: Pick<Company,
   const delta = candidate.delta_overheat ?? 0;
   return {
     symbol: candidate.ticker, name: candidate.company_name, price, ...reference,
-    value: candidate.value_score ?? 0, overheat: candidate.overheat_score, deltaOverheat: delta,
+    value: metricNumber(candidate, "value_score"), overheat: candidate.overheat_score, deltaOverheat: delta,
     multiplier: candidate.dca_multiplier, action, actionTone,
-    summary: `FMP 기준 ${candidate.price_as_of ?? "최신"} 데이터로 계산했습니다. Value ${candidate.value_score?.toFixed(1) ?? "산출 불가"}, Overheat ${candidate.overheat_score.toFixed(1)}, DCA ${formatMultiplier(candidate.dca_multiplier)}입니다.`,
+    summary: `FMP 기준 ${candidate.price_as_of ?? "최신"} 데이터로 계산했습니다. Value ${formatValueScore(candidate.value_score)}, Overheat ${candidate.overheat_score.toFixed(1)}, DCA ${formatMultiplier(candidate.dca_multiplier)}입니다.`,
     valueState: candidate.value_state ?? "INSUFFICIENT DATA",
     overheatState: `${candidate.overheat_state ?? "PENDING"} · ${delta > 0 ? "HEATING" : delta < 0 ? "COOLING" : "STABLE"}`,
     analyzedAt: candidate.analyzed_at, priceAsOf: candidate.price_as_of,
@@ -283,8 +288,8 @@ function analyzedCompany(candidate: CandidateApiRecord, reference: Pick<Company,
     valueMetrics: [
       { label: "FCF Yield", value: fcfYield === null ? "산출 불가" : `${(fcfYield * 100).toFixed(2)}%`, note: "TTM FCF / 현재 시가총액", tone: fcfYield !== null && fcfYield >= .03 ? "positive" : "neutral" },
       { label: "Forward P/E", value: forwardPe === null ? "산출 불가" : `${forwardPe.toFixed(1)}배`, note: "FY1 EPS 컨센서스", tone: forwardPe !== null && forwardPe <= 30 ? "positive" : "caution" },
-      { label: "Forward PEG", value: peg === null ? "산출 불가" : `${peg.toFixed(2)}배`, note: "EPS 성장률 조정", tone: peg !== null && peg <= 1 ? "positive" : "caution" },
-      { label: "EV/Sales ÷ Growth", value: evSalesGrowth === null ? "산출 불가" : `${evSalesGrowth.toFixed(2)}배`, note: "매출 성장률 조정", tone: evSalesGrowth !== null && evSalesGrowth <= .4 ? "positive" : "caution" },
+      { label: "Forward PEG", value: pegPenalty ? "0.0점 · 음의 EPS 성장" : peg === null ? "산출 불가" : `${peg.toFixed(2)}배`, note: "EPS 성장률 조정", tone: peg !== null && peg <= 1 ? "positive" : "caution" },
+      { label: "EV/Sales ÷ Growth", value: revenuePenalty ? "0.0점 · 음의 매출 성장" : evSalesGrowth === null ? "산출 불가" : `${evSalesGrowth.toFixed(2)}배`, note: "매출 성장률 조정", tone: evSalesGrowth !== null && evSalesGrowth <= .4 ? "positive" : "caution" },
     ],
     overheatMetrics: [
       { label: "MA20 Distance", value: ma20Distance === null ? "산출 불가" : `${(ma20Distance * 100).toFixed(1)}%`, note: "MA Extension 40% · 총점 16%", tone: ma20Distance !== null && ma20Distance > .15 ? "caution" : "neutral" },
@@ -317,7 +322,7 @@ function StockDashboard({ onPension }: { onPension: () => void }) {
     if (sample) return { ...sample, ...reference };
     return {
       ...companies[0], ...reference, symbol: candidate.ticker, name: candidate.company_name, price: 0,
-      value: 0, overheat: 0, deltaOverheat: 0, multiplier: null, action: "REVIEW" as Action,
+      value: null, overheat: 0, deltaOverheat: 0, multiplier: null, action: "REVIEW" as Action,
       actionTone: "neutral" as Tone, summary: "후보 등록은 완료되었습니다. 다음 Buy Engine 갱신에서 Value·Overheat·DCA가 계산됩니다.",
       valueState: "PENDING", overheatState: "PENDING", valueMetrics: [], overheatMetrics: [],
     };
@@ -326,13 +331,14 @@ function StockDashboard({ onPension }: { onPension: () => void }) {
   const visibleCompanies = useMemo(() => {
     const filtered = filter === "ALL" ? resolvedCompanies : resolvedCompanies.filter((company) => company.action === filter);
     return [...filtered].sort((a, b) => {
-      const values: Record<SortKey, [string | number, string | number]> = {
+      if (sortKey === "value" && (a.value === null || b.value === null)) return a.value === b.value ? 0 : a.value === null ? 1 : -1;
+      const values: Record<SortKey, [string | number | null, string | number | null]> = {
         symbol: [a.symbol, b.symbol], value: [a.value, b.value], overheat: [a.overheat, b.overheat],
         deltaOverheat: [a.deltaOverheat, b.deltaOverheat], multiplier: [a.multiplier ?? -1, b.multiplier ?? -1],
         action: [actionRank[a.action], actionRank[b.action]],
       };
       const [left, right] = values[sortKey];
-      const result = typeof left === "string" ? left.localeCompare(String(right)) : left - Number(right);
+      const result = typeof left === "string" ? left.localeCompare(String(right)) : Number(left) - Number(right);
       return direction === "asc" ? result : -result;
     });
   }, [filter, sortKey, direction, resolvedCompanies]);
@@ -396,63 +402,7 @@ function StockDashboard({ onPension }: { onPension: () => void }) {
             </tr></thead>
             <tbody>
               {visibleCompanies.map((company) => (
-                <tr key={company.symbol} className={selected?.symbol === company.symbol ? "active-row" : ""} onClick={() => setSelectedSymbol(company.symbol)} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedSymbol(company.symbol); }} aria-label={`${company.symbol} 상세 보기`}>
-                  <td><div className="table-symbol"><span className={`mini-ticker ticker-${company.symbol.toLowerCase()}`}>{company.symbol[0]}</span><div><strong>{company.symbol}</strong><small>{company.name}</small></div></div></td>
-                  <td className="numeric">{formatPrice(company.price)}</td>
-                  <td><span className={`stage-pill stage-${company.fundamentalStage}`}>{stageLabels[company.fundamentalStage]}</span><small className="reference-date">{company.fundamentalUpdatedAt ? new Date(company.fundamentalUpdatedAt).toLocaleDateString("ko-KR") : "—"}</small></td>
-                  <td><strong className="fundamental-score">{company.fundamentalScore?.toFixed(1) ?? "—"}</strong></td>
-                  <td><span className={`score-number ${company.value < 20 ? "low" : "good"}`}>{company.value.toFixed(1)}</span></td>
-                  <td><span className={`score-number ${company.overheat >= 75 ? "hot" : "cool"}`}>{company.overheat.toFixed(1)}</span></td>
-                  <td><span className={`delta ${company.deltaOverheat > 0 ? "heating" : "cooling"}`}>{formatDelta(company.deltaOverheat)}</span></td>
-                  <td><strong className="multiplier">{formatMultiplier(company.multiplier)}</strong></td>
-                  <td><span className={`action-chip tone-${company.actionTone}`}>{company.action}</span></td>
-                  <td><button className={registry.view === "active" ? "deactivate-button" : "reactivate-button"} onClick={(event) => { event.stopPropagation(); void changeCandidateState(company.symbol, registry.view !== "active"); }}>{registry.view === "active" ? "비활성화" : "재활성화"}</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!visibleCompanies.length && <div className="candidate-empty"><strong>{registry.view === "active" ? "활성 후보가 없습니다." : "비활성 후보가 없습니다."}</strong><span>{registry.view === "active" ? "Fundamental Flow에서 Add to Buy Engine을 눌러 후보를 등록하세요." : "비활성화한 종목이 이곳에 표시됩니다."}</span></div>}
-        </div>
-        <div className="table-foot"><span>{visibleCompanies.length} symbols</span><span>{candidateMessage || "Deactivate는 이력을 삭제하지 않습니다."}</span></div>
-      </section>
-
-      {selected && <article className="detail-card" aria-live="polite">
-        <div className="detail-header">
-          <div className="identity"><div className={`ticker ticker-${selected.symbol.toLowerCase()}`}>{selected.symbol[0]}</div><div><div className="symbol-line"><h2>{selected.symbol}</h2><span>{selected.name}</span></div><p className="price">{formatPrice(selected.price)} · as of {selected.priceAsOf ?? "—"}</p></div></div>
-          <div className={`gate-block stage-block-${selected.fundamentalStage}`}><span>FUNDAMENTAL STAGE</span><strong>{stageLabels[selected.fundamentalStage]}</strong><small>Score {selected.fundamentalScore?.toFixed(1) ?? "—"} · Trend adjustment</small></div>
-          <div className={`decision-block tone-${selected.actionTone}`}><span>ACTION</span><strong>{selected.action}</strong><small>DCA {formatMultiplier(selected.multiplier)}</small></div>
-        </div>
-
-        <div className="priority-strip">
-          <div className="priority-main"><span>DCA Multiplier</span><strong>{formatMultiplier(selected.multiplier)}</strong></div>
-          <div><span>Value Score</span><strong>{selected.value.toFixed(1)}</strong></div>
-          <div><span>Overheat Score</span><strong>{selected.overheat.toFixed(1)}</strong></div>
-          <div><span>ΔOverheat</span><strong className={selected.deltaOverheat > 0 ? "text-caution" : "text-positive"}>{formatDelta(selected.deltaOverheat)}</strong></div>
-          <div><span>Action</span><strong className={`text-${selected.actionTone}`}>{selected.action}</strong></div>
-        </div>
-
-        <p className="decision-summary">{selected.summary}</p>
-
-        <section className="audit-card" aria-labelledby="audit-title">
-          <div className="audit-title"><div><span>AUDIT TRAIL</span><h3 id="audit-title">계산 근거와 기준일</h3></div><strong className={`quality-${selected.dataQualityStatus?.toLowerCase() ?? "check"}`}>{selected.dataQualityStatus ?? "CHECK"}</strong></div>
-          <div className="audit-grid">
-            <div><span>주가 기준일</span><strong>{selected.priceAsOf ?? "—"}</strong></div>
-            <div><span>계산 시각</span><strong>{selected.analyzedAt ? new Date(selected.analyzedAt).toLocaleString("ko-KR") : "—"}</strong></div>
-            <div><span>시가총액 기준일</span><strong>{selected.marketCapAsOf ?? "—"}</strong></div>
-            <div><span>재무 기준일</span><strong>{selected.financialAsOf ?? "—"}</strong></div>
-            <div><span>계산 버전</span><strong>{selected.sourceVersion ?? "—"}</strong></div>
-          </div>
-          <div className="audit-decision"><strong>{selected.valueState} × {selected.overheatState.split(" · ")[0]} = DCA {formatMultiplier(selected.multiplier)}</strong><span>Fundamental Stage와 Score는 DCA 계산에 반영하지 않습니다.</span></div>
-          {Boolean(selected.dataQualityWarnings?.length) && <ul className="audit-warnings">{selected.dataQualityWarnings!.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
-        </section>
-
-        <div className="analysis-grid">
-          <MetricPanel title="Value" subtitle={selected.valueState} metrics={selected.valueMetrics} score={selected.value} tone={selected.value >= 60 ? "positive" : selected.value < 20 ? "negative" : "neutral"} />
-          <MetricPanel title="Overheat" subtitle={selected.overheatState} metrics={selected.overheatMetrics} score={selected.overheat} tone={selected.overheat >= 75 ? "negative" : selected.overheat >= 50 ? "caution" : "positive"} />
-        </div>
-      </article>}
-
-      <section className="method-note"><div className="method-index">01</div><div><h3>DCA는 Value와 Overheat만으로 결정합니다.</h3><p>1.5×는 Value 70 이상·Overheat 25 미만에서만 허용하고, Overheat 75 이상 또는 Value 20 미만이면 신규 매수를 중단합니다.</p></div><div className="legend"><span><i className="legend-dot green" />BUY</span><span><i className="legend-dot amber" />PAUSE</span><span><i className="legend-dot red" />과열·부담</span></div></section>
+                <tr key={company.symbol} className={selected?.symbol === company.symbol ? "active-row" : ""} onClick={() => setSelectedSymbol(company.symbol)} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedSymbol(company.symbol); …1658 tokens truncated…span><i className="legend-dot amber" />PAUSE</span><span><i className="legend-dot red" />과열·부담</span></div></section>
       <footer><span>0×는 매도가 아닌 신규 매수 중단(PAUSE)입니다.</span><span>SELL 기능 없음 · 임계값 백테스트 전</span></footer>
     </main>
   );

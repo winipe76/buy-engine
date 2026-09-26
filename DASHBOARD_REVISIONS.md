@@ -11,6 +11,22 @@
 
 ---
 
+## 2026-09-26 — 음의 Forward Growth와 산출 불가 Value 구분
+
+- 음의 EPS/Revenue Growth를 유효 입력으로 보존하고 PEG/EV-Sales-Growth에 각각 0점 penalty를 포함합니다. 양의 성장률 점수 변환과 동일 가중치 평균은 유지합니다.
+- 기존 정상 component 3개 이상 조합 외에 Forward P/E와 FCF Yield가 모두 유효한 경우도 산출합니다. penalty만으로 데이터 충분성을 충족시키지 않습니다.
+- estimate 부재, growth 0, 잘못된 분모와 비유한 입력은 missing으로 제외합니다. FY2 estimate 0은 실제 -100% 성장으로 처리하며, 양수 FY1 기저를 요구합니다.
+- FCF/EV 입력 누락을 0으로 대체하지 않습니다. estimate가 없는 정상 빈 응답은 REVIEW snapshot으로 남깁니다. API 실패와 재무제표 무결성 검사는 유지합니다.
+- JSON에 component 상태·점수·사유·가중치, 원본 growth, 충분성 사유를 기록합니다. UI의 null→0 fallback을 제거하고 N/A와 실제 0.0을 구별합니다.
+- DCA Matrix, Fundamental 참고 정보 연동, Fundamental Score의 DCA 제외, SELL 미제공 원칙은 변경하지 않았습니다.
+- 계산 버전: `buy-engine-v1.7-negative-growth-value`. 과거 Snapshot은 그대로 두고 다음 업데이트부터 적용합니다.
+- 검증: 전체 28개 테스트와 build 통과. 양의 성장, 각 음수 조합, 누락, 0 분모, 실제 0점, UI N/A, service JSON 저장을 검증했습니다.
+- FANG/NVDA/PLTR/MU/ALNY는 명시적인 합성 fixture로만 검증했습니다. FMP 키와 운영 데이터가 없어 최신 실데이터 점수는 미검증입니다. 종목별 목표 점수는 강제하지 않았습니다.
+- 로컬 pnpm 11 환경은 `--config.strictDepBuilds=false --config.verifyDepsBeforeRun=false`로 설치 스크립트 미실행에 따른 실행 차단을 해제해 test/build를 수행했습니다. 패키지·lockfile·전역 설정은 변경하지 않았습니다.
+- 별도 TypeScript 검사에서 기존 Cloudflare 타입 미설정 및 가격 정렬 Map 타입 오류가 확인됩니다. 수정 전 HEAD에서도 같은 오류가 재현되어 이번 범위에는 포함하지 않았습니다.
+
+---
+
 ## 2026-09-15 — 1.5× Value 기준 완화
 
 - 우량 성장주의 Value Score가 80점까지 상승하기 어려운 점을 반영해 1.5×의 Value 기준을 `80 → 70`으로 완화했습니다.
