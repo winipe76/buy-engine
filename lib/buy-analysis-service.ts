@@ -1,8 +1,8 @@
-import { calculateOverheat, calculateValue, decideDca, numeric, type NumericRow } from "@/lib/buy-analysis-engine";
+import { calculateOverheat, calculateValue, decideDca, forwardGrowth, numeric, type NumericRow } from "@/lib/buy-analysis-engine";
 import { completedUsDailyRows, isCompletedPriceCacheSafe } from "@/lib/completed-prices";
 
 const FMP_BASE_URL = "https://financialmodelingprep.com/stable";
-const SOURCE_VERSION = "buy-engine-v1.6-value-70-threshold";
+const SOURCE_VERSION = "buy-engine-v1.7-negative-growth-value";
 const BENCHMARK_CACHE_MS = 12 * 60 * 60 * 1000;
 
 type AnalysisRuntime = { DB: D1Database; FMP_API_KEY: string };
@@ -50,8 +50,7 @@ function ttmSum(rows: NumericRow[], ...keys: string[]) {
 
 function futureEstimates(rows: NumericRow[], today: string) {
   const future = rows.filter((row) => String(row.date ?? "") >= today).sort((left, right) => String(left.date).localeCompare(String(right.date)));
-  if (!future.length) throw new Error("No future annual analyst estimate was returned");
-  return { current: future[0], following: future[1] ?? null };
+  return { current: future[0] ?? {}, following: future[1] ?? null };
 }
 
 function auditInputs(symbol: string, priceAsOf: string, stockSessions: number, benchmarkAlignedSessions: number, marketCapRow: NumericRow, income: NumericRow[], cashflow: NumericRow[], balance: NumericRow[]) {
@@ -111,18 +110,20 @@ export async function refreshCandidateAnalysis(runtime: AnalysisRuntime, ticker:
   const marketCap = numeric(marketCapRow, "marketCap") ?? 0;
   const totalDebt = numeric(balanceRow, "totalDebt");
   const cash = numeric(balanceRow, "cashAndCashEquivalents");
-  const enterpriseValue = totalDebt !== null && cash !== null ? marketCap + totalDebt - cash : 0;
+  const enterpriseValue = totalDebt !== null && cash !== null ? marketCap + totalDebt - cash : null;
   const forwardRevenue = numeric(current, "estimatedRevenueAvg", "revenueAvg");
   const nextRevenue = numeric(following ?? {}, "estimatedRevenueAvg", "revenueAvg");
   const forwardEps = numeric(current, "estimatedEpsAvg", "epsAvg");
   const nextEps = numeric(following ?? {}, "estimatedEpsAvg", "epsAvg");
-  const revenueGrowth = nextRevenue && forwardRevenue ? nextRevenue / forwardRevenue - 1 : null;
-  const epsGrowth = nextEps && forwardEps && forwardEps > 0 ? nextEps / forwardEps - 1 : null;
-  const value = calculateValue({ price: overheat.price, marketCap, enterpriseValue, ttmFcf: ttmSum(cashflow, "freeCashFlow") ?? 0, forwardRevenue, forwardEps, revenueGrowth, epsGrowth });
+  const revenueGrowth = forwardGrowth(forwardRevenue, nextRevenue);
+  const epsGrowth = forwardGrowth(forwardEps, nextEps);
+  const value = calculateValue({ price: overheat.price, marketCap, enterpriseValue, ttmFcf: ttmSum(cashflow, "freeCashFlow"), forwardRevenue, forwardEps, revenueGrowth, epsGrowth });
 
   const decision = decideDca(value.score, overheat.score);
   const baseQuality = auditInputs(symbol, priceAsOf, stockSeries.dates.length, aligned.dates.length, marketCapRow, income, cashflow, balance);
-  const quality = { ...baseQuality, base_dca_multiplier: decision.base_multiplier };
+  const quality = { ...baseQuality, base_dca_multiplier: decision.base_multiplier,
+    value_components: value.components, value_sufficient_data: value.sufficient_data,
+    value_sufficiency_reason: value.sufficiency_reason, source_version: SOURCE_VERSION };
   const previous = await runtime.DB.prepare("SELECT overheat_score FROM buy_analysis_snapshots WHERE ticker=? ORDER BY analyzed_at DESC LIMIT 1").bind(symbol).first<{ overheat_score: number }>();
   const deltaOverheat = previous ? overheat.score - previous.overheat_score : 0;
   const rawDatasets: Array<[string, string, NumericRow[]]> = [

@@ -9,10 +9,18 @@ export type OverheatMetrics = {
   price_acceleration: number; ma_dispersion: number; score: number;
 };
 
+export type ValueComponent = {
+  status: "valid" | "negative_growth" | "missing";
+  score: number | null; reason: string; weight: number;
+};
+
 export type ValueMetrics = {
   forward_pe: number | null; peg: number | null; forward_ev_sales: number | null;
   ev_sales_growth: number | null; fcf_yield: number | null; score: number | null;
   available_components: number; total_components: number; coverage_ratio: number; sufficient_data: boolean;
+  components: Record<string, ValueComponent>;
+  eps_growth: number | null; revenue_growth: number | null; growth_unit: "ratio";
+  independent_components: string[]; included_weight: number; sufficiency_reason: string;
 };
 
 export type DcaDecision = {
@@ -75,25 +83,63 @@ export function calculateOverheat(closes: number[], benchmarkCloses: number[], b
   };
 }
 
+const finite = (value: number | null): value is number => typeof value === "number" && Number.isFinite(value);
+const positive = (value: number | null): value is number => finite(value) && value > 0;
+
+export function forwardGrowth(current: number | null, following: number | null) {
+  const growth = positive(current) && finite(following) ? following / current - 1 : null;
+  return finite(growth) ? growth : null;
+}
+
+export function formatValueScore(score: number | null | undefined) {
+  return typeof score === "number" && Number.isFinite(score) ? score.toFixed(1) : "N/A";
+}
+
 export function calculateValue(input: {
-  price: number; marketCap: number; enterpriseValue: number; ttmFcf: number;
+  price: number; marketCap: number; enterpriseValue: number | null; ttmFcf: number | null;
   forwardRevenue: number | null; forwardEps: number | null; revenueGrowth: number | null; epsGrowth: number | null;
 }): ValueMetrics {
-  const forwardPe = input.forwardEps && input.forwardEps > 0 ? input.price / input.forwardEps : null;
-  const peg = forwardPe && input.epsGrowth && input.epsGrowth > 0 ? forwardPe / (input.epsGrowth * 100) : null;
-  const forwardEvSales = input.forwardRevenue && input.forwardRevenue > 0 ? input.enterpriseValue / input.forwardRevenue : null;
-  const evSalesGrowth = forwardEvSales && input.revenueGrowth && input.revenueGrowth > 0 ? forwardEvSales / (input.revenueGrowth * 100) : null;
-  const fcfYield = input.marketCap > 0 ? input.ttmFcf / input.marketCap : null;
-  const components: number[] = [];
-  if (forwardPe !== null) components.push(clamp((60 - forwardPe) / 50 * 100));
-  if (peg !== null) components.push(clamp((3 - peg) / 2.5 * 100));
-  if (evSalesGrowth !== null) components.push(clamp((0.8 - evSalesGrowth) / 0.7 * 100));
-  if (fcfYield !== null) components.push(clamp(fcfYield / 0.05 * 100));
-  const sufficientData = components.length >= 3 && (peg !== null || evSalesGrowth !== null);
+  const ratio = (numerator: number | null, denominator: number | null) => {
+    const result = finite(numerator) && positive(denominator) ? numerator / denominator : null;
+    return finite(result) ? result : null;
+  };
+  const forwardPe = positive(input.price) ? ratio(input.price, input.forwardEps) : null;
+  const forwardEvSales = ratio(input.enterpriseValue, input.forwardRevenue);
+  const fcfYield = ratio(input.ttmFcf, input.marketCap);
+  const epsGrowth = finite(input.epsGrowth) ? input.epsGrowth : null;
+  const revenueGrowth = finite(input.revenueGrowth) ? input.revenueGrowth : null;
+  const peg = forwardPe !== 0 && positive(epsGrowth) ? ratio(forwardPe, epsGrowth * 100) : null;
+  const evSalesGrowth = forwardEvSales !== 0 && positive(revenueGrowth) ? ratio(forwardEvSales, revenueGrowth * 100) : null;
+  const component = (raw: number | null, score: number): ValueComponent => ({
+    status: raw === null ? "missing" : "valid", score: raw === null ? null : clamp(score),
+    reason: raw === null ? "missing_or_invalid_input" : "calculated", weight: 1,
+  });
+  const growthComponent = (base: number | null, growth: number | null, raw: number | null, score: number, reason: string): ValueComponent => {
+    if (base === null || base === 0 || growth === null || growth === 0) return {
+      status: "missing", score: null, weight: 1,
+      reason: growth === 0 ? "zero_growth_denominator" : "missing_or_invalid_input",
+    };
+    if (growth < 0) return { status: "negative_growth", score: 0, weight: 1, reason };
+    return component(raw, score);
+  };
+  const components = {
+    forward_pe: component(forwardPe, (60 - (forwardPe ?? 0)) / 50 * 100),
+    peg: growthComponent(forwardPe, epsGrowth, peg, (3 - (peg ?? 0)) / 2.5 * 100, "negative_eps_growth"),
+    ev_sales_growth: growthComponent(forwardEvSales, revenueGrowth, evSalesGrowth, (0.8 - (evSalesGrowth ?? 0)) / 0.7 * 100, "negative_revenue_growth"),
+    fcf_yield: component(fcfYield, (fcfYield ?? 0) / 0.05 * 100),
+  };
+  const included = Object.values(components).filter((item) => item.score !== null);
+  const validCount = Object.values(components).filter((item) => item.status === "valid").length;
+  const independent = [forwardPe !== null ? "forward_pe" : null, fcfYield !== null ? "fcf_yield" : null].filter((key): key is string => key !== null);
+  const legacyCoverage = validCount >= 3 && (peg !== null || evSalesGrowth !== null);
+  const sufficientData = legacyCoverage || independent.length === 2;
   return {
     forward_pe: forwardPe, peg, forward_ev_sales: forwardEvSales, ev_sales_growth: evSalesGrowth,
-    fcf_yield: fcfYield, score: sufficientData ? mean(components) : null, available_components: components.length,
-    total_components: 4, coverage_ratio: components.length / 4, sufficient_data: sufficientData,
+    fcf_yield: fcfYield, score: sufficientData ? mean(included.map((item) => item.score!)) : null, available_components: included.length,
+    total_components: 4, coverage_ratio: included.length / 4, sufficient_data: sufficientData,
+    components, eps_growth: epsGrowth, revenue_growth: revenueGrowth, growth_unit: "ratio",
+    independent_components: independent, included_weight: included.length,
+    sufficiency_reason: legacyCoverage ? "existing_valid_coverage" : sufficientData ? "forward_pe_and_fcf_yield" : "insufficient_data",
   };
 }
 
